@@ -1,0 +1,127 @@
+---
+title: "Practical Machine Learning: Predicting the manner of exercise in data from accelerometers"
+author: "author"
+date: "2nd May 2016"
+output: html_document
+---
+
+##Introduction
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement devices. 
+
+In this project, our goal was to use the data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. 
+
+The goal of our project is to predict the manner in which 6 participants did the exercise. 
+
+##Methods
+
+The manner of exercise is recorded within the "classe" variable in the training set of weight lifting exercises dataset. Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+
+To predict manner of exercise, we used parallel random forest model with no preprocessing.
+
+##Results
+#Used packages
+
+```{r}
+library(caret)
+```
+
+#Reading data
+
+```{r}
+testing <- read.csv("pml-testing.csv", na.strings=c("", "NA", "NULL"))
+training <- read.csv("pml-training.csv", na.strings=c("", "NA", "NULL"))
+```
+
+#Very short exploratory analysis
+
+```{r}
+str(training)
+dim(training)
+```
+
+By looking at the data, we can see that they are quite big which will cause the training process to take very long time and due to uncleaned data, it may add on bias. Let`s see whether we can clean them in the way we do not loose on the accuracy.
+
+#Cleaning data
+
+#1. Remove the columns with zero or near-zero variance
+First, we will remove the columns whose values do not change or change minimally regarding the number of all observations as these may have a minimum impact on the result.
+
+```{r}
+training.zero.var <- nearZeroVar(training)
+training.var <- training[,-c(training.zero.var)]
+dim(training.var)
+
+```
+
+#2. Remove info about participants
+As we can see, in the first six columns, these are informations on participants like their code, number etc. They are not needed for model training so we can remove them.
+
+```{r}
+training.w.info <- training.var[,-c(1:6)]
+dim(training.w.info)
+```
+
+#3. Remove highly correlated variables
+If there are highly correlated variables, we may want to remove them as their impact on the training model result should be minimal. We will remove he variables which are correlated 0,95 or more.
+
+```{r}
+corrMatrix <- cor(na.omit(training.w.info[sapply(training.w.info, is.numeric)]))
+training.high.cor <- findCorrelation(corrMatrix, cutoff = .95, verbose = TRUE)
+training.no.cor <- training.w.info[,-training.high.cor]
+dim(training.no.cor)
+
+```
+
+#4. Remove NA values
+If a column contains many NA values, it does not provide an objective value for our model training anymore. We will remove these columns as well.
+
+```{r}
+training.no.na <- training.no.cor[ , colSums(is.na(training.no.cor)) == 0]
+dim(training.no.na)
+```
+
+By the end of cleaning, we are left with 49 variables from 160 originally.
+
+## Splitting data into training and validation set
+
+```{r}
+inTrain <- createDataPartition(y = training.no.na$classe, p = 3/4, list = FALSE)
+training <- training.no.na[ inTrain,]
+validation <- training.no.na[-inTrain,]
+```
+
+##Model building
+We built three different models: random forest, regression trees and generalized boosted model. As random forest takes substantially longer, we set mtry and ntree to constant values and insted of using "rf", we used "parRF" method (parallel random forest) whose advantage is that it can run on more cores so the total running time is shortened.
+
+```{r}
+mtryGrid <- expand.grid(mtry = 100)
+rf <- train(classe ~ ., data = training, method = "parRF", ntree = 100, tuneGrid = mtryGrid, importance = TRUE)
+rf
+rpart <- train(classe ~ ., data = training, method = "rpart")
+rpart
+gbm <- train(classe ~ ., data = training, method = "gbm")
+gbm
+```
+
+The highest accuracy was obtained with rf model: 0,97.
+
+##Cross-validation on validation set
+
+```{r}
+valid.pred=predict(rf,validation)
+predMatrix = with(validation,table(valid.pred,classe))
+sum(diag(predMatrix))/sum(as.vector(predMatrix))
+```
+
+The accuracy on validation data set was 97 %.
+
+##Results
+Finally, we will predicted 20 observations from provided testing data set with 100 % accuracy.
+
+```{r}
+results <- predict(rf, testing)
+results
+```
+
+
